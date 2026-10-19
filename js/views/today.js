@@ -8,6 +8,7 @@ import { field, fmtInt, fmtNum, h, icon, mount, numInput, readNum, textInput, to
 import { dateNav, nutritionSummary, sumLogs, waterCard } from './common.js';
 import { openStartSession } from './train.js';
 import { syncDot } from './account.js';
+import { gameCard } from './game.js';
 
 export async function renderToday(root) {
   const date = getDate();
@@ -31,6 +32,7 @@ export async function renderToday(root) {
     })
   );
 
+  const gameEl = await gameCard();
   const weights = cleanWeights(bodyAll);
   const avg7 = movingAverage(weights).filter((p) => p.date <= date).slice(-1)[0];
   const lastW = weights.filter((p) => p.date <= date).slice(-1)[0];
@@ -56,6 +58,7 @@ export async function renderToday(root) {
     recalc
       ? h('section', { class: 'card notice warn' }, h('p', null, `น้ำหนักเปลี่ยนไปจากตอนคำนวณเป้า (${fmtNum(profile.calc_weight_kg)} → ${fmtNum(lastW.weight)} กก.) ควรคำนวณเป้าใหม่`), h('a', { class: 'btn', href: '#/settings' }, 'ไปคำนวณใหม่'))
       : null,
+    gameEl,
     h(
       'section',
       { class: 'card' },

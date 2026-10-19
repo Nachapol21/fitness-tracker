@@ -2,7 +2,7 @@
 // ใช้ UUID ที่คำนวณจากชื่อ (deterministic) เพื่อให้ทุกเครื่อง/ไฟล์นำเข้าได้ id เดียวกัน → ซิงก์/นำเข้าแล้วไม่เกิดรายการซ้ำ
 // ไฟล์นี้ไม่แตะ DOM จึงใช้ใน Node (tools/) ได้
 
-export const SEED_VERSION = 1;
+export const SEED_VERSION = 2; // v2: เพิ่มรางวัลตั้งต้นของร้านแลกรางวัล
 export const SEED_TIME = '2026-10-18T00:00:00.000Z';
 
 function hash128(str) {
@@ -110,6 +110,15 @@ const FOODS = [
   ['ชานมไข่มุก', '1 แก้ว', 450, 4, 80, 12],
 ];
 
+// [emoji, ชื่อ, ราคา coin, kcal ประมาณ, cooldown (วัน)]  ราคา/kcal/cooldown เป็นค่าเริ่มต้น แก้ได้ในร้าน
+const REWARDS = [
+  ['🧋', 'ชานมไข่มุก (หวานน้อย)', 60, 450, 3],
+  ['🍰', 'ขนม/ของหวาน 1 อย่าง', 40, 300, 2],
+  ['🍲', 'ชาบู/สุกี้บุฟเฟ่ต์', 150, 1200, 7],
+  ['🍕', 'กินอะไรก็ได้ 1 มื้อ (cheat meal)', 200, 1500, 7],
+  ['🎬', 'ดูหนัง 1 เรื่อง', 100, 0, 7], // ตัวอย่างรางวัลที่ไม่ใช่ของกิน
+];
+
 function base(id) {
   return { id, created_at: SEED_TIME, updated_at: SEED_TIME, deleted: false };
 }
@@ -141,6 +150,18 @@ export function seedFoods() {
     fat,
     favorite: !!fav,
     estimated: true, // ค่าประมาณ แต่ละร้านต่างกันได้ ±20–30%
+  }));
+}
+
+export function seedRewards() {
+  return REWARDS.map(([emoji, name, price, kcal, cooldown_days]) => ({
+    ...base(seedId('reward', name)),
+    name,
+    emoji,
+    price,
+    kcal,
+    cooldown_days,
+    active: true,
   }));
 }
 

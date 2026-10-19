@@ -7,6 +7,7 @@ import { exportCSV, exportJSON, importFile, summarizeStats } from '../io.js';
 import { chipGroup, confirmSheet, field, fmtInt, h, mount, numInput, openSheet, readNum, toast } from '../ui.js';
 import { isIOS, isStandalone, openInstallGuide } from './install.js';
 import { accountCard } from './account.js';
+import { gameSettingsCard } from './game-settings.js';
 import { auth, syncEnabled } from '../sync-service.js';
 
 export function applyTheme(theme) {
@@ -25,11 +26,11 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 export async function renderSettings(root) {
-  const [profile, bodyAll, lastExport, persisted] = await Promise.all([db.getProfile(), db.list('body_logs'), db.getMeta('last_export_at'), db.getMeta('persisted')]);
+  const [profile, bodyAll, lastExport, persisted, gameSettings, allData] = await Promise.all([db.getProfile(), db.list('body_logs'), db.getMeta('last_export_at'), db.getMeta('persisted'), db.getGameSettings(), db.loadAll()]);
   const latestW = cleanWeights(bodyAll).slice(-1)[0]?.weight ?? null;
   const refresh = () => renderSettings(root);
 
-  mount(root, h('header', { class: 'page-head' }, h('h1', null, 'ตั้งค่า')), profileCard({ profile, latestW, refresh }), appearanceCard(), accountCard({ refresh }), dataCard({ lastExport, refresh }), storageCard({ persisted, refresh }), aboutCard({ refresh }));
+  mount(root, h('header', { class: 'page-head' }, h('h1', null, 'ตั้งค่า')), profileCard({ profile, latestW, refresh }), gameSettingsCard({ settings: gameSettings, refresh, data: allData, profile }), appearanceCard(), accountCard({ refresh }), dataCard({ lastExport, refresh }), storageCard({ persisted, refresh }), aboutCard({ refresh }));
 }
 
 // ---------- โปรไฟล์และเป้า ----------

@@ -52,7 +52,14 @@ export function recordToRow(table, rec, userId) {
 export async function mergeRows(rows, io) {
   let applied = 0;
   let skipped = 0;
+  let unknown = 0; // แถวของ collection ที่แอปรุ่นนี้ไม่รู้จัก (มาจากแอปรุ่นใหม่กว่า)
+  let unknownMs = 0; // เวลาเซิร์ฟเวอร์ที่เก่าที่สุดของแถวเหล่านั้น: ผู้เรียกต้องไม่เลื่อน cursor ผ่านจุดนี้ ไม่งั้นพออัปเกรดแล้วจะไม่ได้แถวพวกนั้นอีก
   for (const row of rows) {
+    if (row && typeof row.collection === 'string' && !io.tables.includes(row.collection)) {
+      unknown++;
+      const t = toMs(row.server_updated_at);
+      if (t > 0 && (unknownMs === 0 || t < unknownMs)) unknownMs = t;
+    }
     if (!row || !io.tables.includes(row.collection) || typeof row.id !== 'string') {
       skipped++;
       continue;
@@ -63,5 +70,8 @@ export async function mergeRows(rows, io) {
       applied++;
     } else skipped++;
   }
-  return { applied, skipped };
+  const result = { applied, skipped };
+  // unknown/unknownMs ไม่ enumerable: ผลลัพธ์ที่เทสต์/ผู้เรียกเดิมเทียบ ({applied, skipped}) ไม่เปลี่ยน แต่ sync.js อ่านได้
+  Object.defineProperties(result, { unknown: { value: unknown }, unknownMs: { value: unknownMs } });
+  return result;
 }

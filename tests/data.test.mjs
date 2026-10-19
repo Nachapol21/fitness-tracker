@@ -112,7 +112,9 @@ test('ไม่มี CDN/URL ภายนอก และไม่มี key/se
 
 test('ไฟล์นำเข้าข้อมูลเดิม (ถ้ามีในเครื่องนี้): ผ่านตัวตรวจ, id ไม่ซ้ำ, ความสัมพันธ์ครบ', { skip: !existsSync(join(root, 'private', 'initial-import.json')) }, () => {
   const data = JSON.parse(readFileSync(join(root, 'private', 'initial-import.json'), 'utf8'));
-  const t = validateImport(data);
+  const validated = validateImport(data);
+  // ไฟล์ที่สร้างก่อนมีเกม coin ไม่มีตาราง game_settings/rewards/redemptions — ถือว่าว่าง (นำเข้าได้ปกติ)
+  const t = Object.fromEntries(TABLES.map((tb) => [tb, validated[tb] ?? []]));
   for (const tb of TABLES) assert.ok(Array.isArray(t[tb]), tb);
   const ids = TABLES.flatMap((tb) => t[tb].map((r) => r.id));
   assert.equal(new Set(ids).size, ids.length, 'id ซ้ำ');

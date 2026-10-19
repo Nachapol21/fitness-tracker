@@ -8,13 +8,14 @@
 // ตาราง 'meta' และ 'dirty' เป็นค่าเฉพาะเครื่อง (ไม่ซิงก์ ไม่ export)
 //   dirty = รายการที่เขียนในเครื่องแล้วแต่ยังไม่ได้ push ขึ้นเซิร์ฟเวอร์ (เขียนใน transaction เดียวกับตัวข้อมูล)
 
-import { DATA_FORMAT, DATA_VERSION, DEFAULT_PROFILE, PROFILE_ID, TABLES } from './constants.js';
-import { SEED_VERSION, seedExercises, seedFoods } from './seed.js';
+import { DATA_FORMAT, DATA_VERSION, DEFAULT_GAME_SETTINGS, DEFAULT_PROFILE, GAME_SETTINGS_ID, PROFILE_ID, TABLES } from './constants.js';
+import { SEED_VERSION, seedExercises, seedFoods, seedRewards } from './seed.js';
 import { mergeRows, toMs } from './lww.js';
 import { isDateStr } from './dates.js';
+import { thaiDay } from './game.js';
 
 const DB_NAME = 'fitness-tracker';
-const DB_VERSION = 2;
+const DB_VERSION = 3; // v3: เพิ่มตารางเกม (game_settings, rewards, redemptions)
 const INDEXES = {
   body_logs: ['date'],
   sessions: ['date'],
@@ -22,6 +23,7 @@ const INDEXES = {
   cardio: ['session_id', 'date'],
   food_logs: ['date'],
   water_logs: ['date'],
+  redemptions: ['date'],
 };
 
 // ---------- พื้นฐาน ----------
@@ -41,6 +43,9 @@ const dirtyEntry = (table, id) => ({ key: `${table}:${id}`, table, id, tok: uuid
 /** เวลา updated_at ใหม่ที่ต้องมากกว่าค่าเดิมเสมอ (กันนาฬิกาเพี้ยนทำให้การแก้ไขแพ้ LWW) */
 const bumpIso = (prev) => new Date(Math.max(Date.now(), toMs(prev) + 1)).toISOString();
 
+/** เปิดฐานข้อมูลไม่ได้เพราะแท็บ/หน้าต่างแอปรุ่นเก่ายังเปิดค้างอยู่ (ต้องปิดก่อนจึงอัปเกรดได้) */
+export class DBBlockedError extends Error {}
+
 let dbPromise = null;
 export function openDB() {
   if (!dbPromise) {
@@ -56,9 +61,17 @@ export function openDB() {
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
         if (!db.objectStoreNames.contains('dirty')) db.createObjectStore('dirty', { keyPath: 'key' }); // v2: คิวรอ push
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const d = req.result;
+        // แท็บอื่นกำลังอัปเกรดฐานข้อมูล (เปิดแอปรุ่นใหม่): ปิดการเชื่อมต่อของเราแล้วโหลดใหม่ ไม่งั้นจะขวางการอัปเกรด
+        d.onversionchange = () => {
+          d.close();
+          location.reload();
+        };
+        resolve(d);
+      };
       req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error('ฐานข้อมูลถูกเปิดค้างอยู่ในแท็บอื่น ปิดแท็บเก่าแล้วลองใหม่'));
+      req.onblocked = () => reject(new DBBlockedError('ปิดหน้าต่างหรือแท็บของแอปรุ่นเก่าที่ยังเปิดอยู่ก่อน แล้วโหลดหน้านี้ใหม่'));
     });
   }
   return dbPromise;
@@ -191,6 +204,35 @@ export async function saveProfile(patch) {
   return create('profile', { ...DEFAULT_PROFILE, ...patch, id: PROFILE_ID });
 }
 
+// ---------- ตั้งค่าเกม (เรคคอร์ดเดียว id คงที่ เหมือนโปรไฟล์) ----------
+
+/** วันนี้ตามเวลาไทย (YYYY-MM-DD) */
+const thaiToday = () => thaiDay(nowIso());
+
+export async function getGameSettings() {
+  const r = await get('game_settings', GAME_SETTINGS_ID);
+  // ยังไม่มีเรคคอร์ด (เช่น ล็อกอินแล้วแต่ยังไม่ซิงก์ครั้งแรก): ให้ coin เริ่มนับวันนี้ไว้ก่อน ไม่งั้นข้อมูลเก่าจะถูกนับเป็น coin ชั่วคราว
+  return { ...DEFAULT_GAME_SETTINGS, ...(r || { start_date: thaiToday() }) };
+}
+
+/**
+ * สร้างการตั้งค่าเกมครั้งแรก โดย start_date = วันนี้ตามเวลาไทย (coin นับเฉพาะวันที่ ≥ วันนั้น) — สร้างเฉพาะเมื่อยังไม่มีเรคคอร์ด
+ * ผู้เรียกควรเรียกหลังซิงก์ครั้งแรกเสร็จ (ถ้าล็อกอินอยู่) จะได้ไม่สร้างทับของที่อยู่บนเซิร์ฟเวอร์
+ * ข้อจำกัด: สองเครื่องที่ยังไม่เคยเห็นของกันสร้างพร้อมกัน → LWW เลือกอันที่ใหม่กว่า (start_date อาจต่างกันไม่กี่วัน) แก้ได้ในตั้งค่า
+ */
+export async function ensureGameSettings() {
+  const existing = await withStores('game_settings', 'readonly', (st) => reqP(st.get(GAME_SETTINGS_ID)));
+  if (existing) return false; // รวมกรณีถูก soft delete: ไม่สร้างทับ
+  await create('game_settings', { ...DEFAULT_GAME_SETTINGS, start_date: thaiToday(), id: GAME_SETTINGS_ID });
+  return true;
+}
+
+export async function saveGameSettings(patch) {
+  const existing = await withStores('game_settings', 'readonly', (st) => reqP(st.get(GAME_SETTINGS_ID)));
+  if (existing) return update('game_settings', GAME_SETTINGS_ID, { ...patch, deleted: false });
+  return create('game_settings', { ...DEFAULT_GAME_SETTINGS, ...patch, id: GAME_SETTINGS_ID });
+}
+
 // ---------- งานเฉพาะโดเมน ----------
 
 /** ลบครั้งที่ฝึก พร้อมเซ็ตและคาร์ดิโอของครั้งนั้น (soft delete ทั้งหมด) */
@@ -212,18 +254,20 @@ export async function saveBodyLog(date, fields) {
 
 // ---------- seed ----------
 
+async function seedMissing(table, rows) {
+  await withStores(table, 'readwrite', async (st) => {
+    for (const r of rows) {
+      const cur = await reqP(st.get(r.id));
+      if (!cur) await reqP(st.put(r));
+    }
+  });
+}
+
 /** ใส่ท่าและอาหารตั้งต้นครั้งแรก (ไม่เขียนทับของที่มีอยู่ รวมถึงของที่ผู้ใช้ลบไปแล้ว) */
 export async function ensureSeed() {
   const done = await getMeta('seed_version', 0);
   if (done >= SEED_VERSION) return false;
-  for (const [table, rows] of [['exercises', seedExercises()], ['foods', seedFoods()]]) {
-    await withStores(table, 'readwrite', async (st) => {
-      for (const r of rows) {
-        const cur = await reqP(st.get(r.id));
-        if (!cur) await reqP(st.put(r));
-      }
-    });
-  }
+  for (const [table, rows] of [['exercises', seedExercises()], ['foods', seedFoods()], ['rewards', seedRewards()]]) await seedMissing(table, rows);
   await setMeta('seed_version', SEED_VERSION);
   if (!(await getMeta('first_run_at'))) await setMeta('first_run_at', nowIso());
   return true;
@@ -300,6 +344,7 @@ export async function importData(data, { replace = false } = {}) {
   const tables = validateImport(data);
   if (replace) {
     for (const table of TABLES) {
+      if (tables[table] === undefined) continue; // ไฟล์ไม่มีตารางนี้ (เช่นไฟล์สำรองรุ่นก่อนมีเกม) → ไม่แตะข้อมูลของตารางนั้น
       const keep = new Set((tables[table] || []).map((r) => r.id));
       await withStores([table, 'dirty'], 'readwrite', async (st, dt) => {
         for (const cur of await reqP(st.getAll())) {
@@ -337,6 +382,8 @@ export async function importData(data, { replace = false } = {}) {
     notify(table);
   }
   // นำเข้าแล้วถือว่ามีคลังท่า/อาหารของผู้ใช้แล้ว ไม่ต้อง seed ซ้ำ
+  // ยกเว้นรางวัล: ถ้าไฟล์ไม่มีตาราง rewards และในเครื่องไม่เหลือรางวัลที่ใช้งานอยู่ (เช่นแทนที่ด้วยไฟล์รุ่นเก่าแล้ว) ให้ใส่รางวัลตั้งต้นที่ยังขาด
+  if (tables.rewards === undefined && !(await list('rewards')).length) await seedMissing('rewards', seedRewards());
   await setMeta('seed_version', SEED_VERSION);
   if (!(await getMeta('first_run_at'))) await setMeta('first_run_at', nowIso());
   return stats;

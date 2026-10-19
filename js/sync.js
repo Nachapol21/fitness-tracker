@@ -8,6 +8,7 @@
 
 import { AuthError } from './auth.js';
 import { recordToRow, toMs } from './lww.js';
+import { SYNC_TABLES_VERSION } from './constants.js';
 
 export const PUSH_BATCH = 500;
 export const PULL_LIMIT = 1000;
@@ -186,6 +187,8 @@ export function createSync({
     const cursor = (await store.getMeta('sync_cursor')) || EPOCH;
     let after = null; // แถวสุดท้ายของหน้าก่อนหน้า { ts: ข้อความจากเซิร์ฟเวอร์ตามเดิม (มีไมโครวินาที), id }
     let maxMs = -1;
+    let minUnknownMs = Infinity; // แถวของ collection ที่ไม่รู้จัก: ห้ามเลื่อน cursor ผ่านไป
+    let unknown = 0;
     let fetched = 0;
     let applied = 0;
     for (;;) {
@@ -200,6 +203,10 @@ export function createSync({
       if (!Array.isArray(rows)) throw new SyncError('bad_response', 'เซิร์ฟเวอร์ตอบกลับในรูปแบบที่ไม่รู้จัก');
       const r = await store.applyRemote(rows);
       applied += r.applied;
+      if (r.unknown) {
+        unknown += r.unknown;
+        minUnknownMs = Math.min(minUnknownMs, r.unknownMs || 0 || Infinity);
+      }
       for (const row of rows) maxMs = Math.max(maxMs, toMs(row.server_updated_at));
       fetched += rows.length;
       if (rows.length < PULL_LIMIT) break;
@@ -208,10 +215,11 @@ export function createSync({
       after = { ts: last.server_updated_at, id: last.id };
     }
     if (maxMs >= 0) {
-      const next = new Date(maxMs - CURSOR_OVERLAP_MS).toISOString();
+      const bound = Math.min(maxMs, minUnknownMs); // เจอแถวที่ไม่รู้จัก → cursor หยุดก่อนแถวนั้น พออัปเกรดแล้วจะได้แถวนั้นมา
+      const next = new Date(bound - CURSOR_OVERLAP_MS).toISOString();
       if (toMs(next) > toMs(cursor)) await store.setMeta('sync_cursor', next);
     }
-    return { fetched, applied };
+    return { fetched, applied, unknown };
   }
 
   function handleError(e) {
@@ -240,7 +248,10 @@ export function createSync({
     try {
       await ensureOwner(session.user);
       const { pushed, rejected } = await push(session.user.id);
+      // เครื่องที่ซิงก์มาก่อนมี collection ใหม่ (รุ่นเก่าข้ามแถวแล้วเลื่อน cursor ไปแล้ว): ดึงใหม่จาก epoch หนึ่งครั้ง
+      if ((Number(await store.getMeta('sync_tables_version')) || 0) < SYNC_TABLES_VERSION) await store.setMeta('sync_cursor', null);
       const pulled = await pull();
+      await store.setMeta('sync_tables_version', SYNC_TABLES_VERSION);
       const at = new Date(now()).toISOString();
       await store.setMeta('sync_last_at', at);
       setStatus({ state: 'idle', lastSyncAt: at, pending: await store.countDirty(), error: null, errorCode: null, rejected: (await getRejected()).length, lastResult: { pushed, rejected, ...pulled } });

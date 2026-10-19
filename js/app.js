@@ -10,9 +10,13 @@ import { renderInsights } from './views/insights.js';
 import { applyTheme, getTheme, renderSettings } from './views/settings.js';
 import { needsInstallGuide, openInstallGuide, shouldAutoShowGuide } from './views/install.js';
 import { exportJSON } from './io.js';
-import { startSync } from './sync-service.js';
+import { SYNC_TABLES_VERSION } from './constants.js';
+import { auth, startSync, sync, syncEnabled } from './sync-service.js';
+import { renderCoins, renderShop } from './views/game.js';
 
-const routes = { today: renderToday, train: renderTrain, food: renderFood, insights: renderInsights, settings: renderSettings };
+const routes = { today: renderToday, train: renderTrain, food: renderFood, insights: renderInsights, settings: renderSettings, shop: renderShop, coins: renderCoins };
+// หน้าย่อย (ไม่มีแท็บของตัวเอง) ให้ไฮไลต์แท็บแม่
+const parentTab = { shop: 'today', coins: 'today' };
 const view = document.getElementById('view');
 const bannersEl = document.getElementById('banners');
 
@@ -84,7 +88,7 @@ async function doRoute({ resetScroll }) {
   await flushPending();
   const { name, params } = parseHash();
   document.querySelectorAll('.tabbar a').forEach((a) => {
-    const on = a.dataset.route === name;
+    const on = a.dataset.route === (parentTab[name] || name);
     a.classList.toggle('on', on);
     if (on) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
@@ -117,8 +121,34 @@ async function start() {
     await db.ensureSeed();
   } catch (err) {
     console.error(err);
+    if (err instanceof db.DBBlockedError) {
+      mount(view, h('section', { class: 'card' }, h('h2', null, 'ปิดหน้าต่างแอปเก่าก่อน'), h('p', null, 'แอปเพิ่งอัปเดต แต่ยังมีแท็บหรือหน้าต่างของแอปรุ่นเก่าเปิดค้างอยู่ จึงอัปเกรดที่เก็บข้อมูลไม่ได้ ข้อมูลของคุณยังอยู่ครบ'), h('p', { class: 'muted' }, 'ปิดแท็บ/หน้าต่างอื่นของแอปนี้ให้หมด (รวมแอปที่ติดตั้งบนหน้าจอโฮมถ้าเปิดค้างอยู่) แล้วกดโหลดใหม่'), h('button', { class: 'btn primary', onclick: () => location.reload() }, 'โหลดใหม่')));
+      return;
+    }
     mount(view, h('section', { class: 'card' }, h('h2', null, 'เปิดที่เก็บข้อมูลไม่ได้'), h('p', null, 'แอปนี้ต้องใช้ IndexedDB ของเบราว์เซอร์ (โหมดส่วนตัวของบางเบราว์เซอร์ปิดไว้) ลองเปิดในหน้าต่างปกติ'), h('p', { class: 'bad-text' }, String(err.message || err))));
     return;
+  }
+  // การตั้งค่าเกม (start_date = วันนี้ตามเวลาไทย) สร้างครั้งเดียว: ถ้าล็อกอินซิงก์อยู่ ต้องรอซิงก์ครั้งแรกเสร็จก่อน จะได้ไม่สร้างทับของที่อยู่บนเซิร์ฟเวอร์
+  let gameSettingsReady = false;
+  const ensureGame = () => {
+    if (gameSettingsReady) return;
+    gameSettingsReady = true;
+    db.ensureGameSettings().catch((e) => {
+      gameSettingsReady = false;
+      console.warn('สร้างการตั้งค่าเกมไม่สำเร็จ', e);
+    });
+  };
+  // ถือว่า "ดึงข้อมูลจากเซิร์ฟเวอร์แล้ว" เมื่อเคยซิงก์ด้วยรุ่นที่รู้จักตารางปัจจุบันครบ (ไม่งั้นรุ่นนี้ยังไม่ได้ดึงการตั้งค่าเกมของเครื่องอื่นมา)
+  const hasSynced = async () => !!(await db.getMeta('sync_last_at')) && (Number(await db.getMeta('sync_tables_version')) || 0) >= SYNC_TABLES_VERSION;
+  if (!syncEnabled || !auth.getSession() || (await hasSynced())) ensureGame();
+  else {
+    const off = sync.subscribe((s) => {
+      if (s.lastResult && s.state === 'idle') { // ซิงก์รอบนี้สำเร็จแล้ว (ดึงของเครื่องอื่นมาแล้ว)
+        off();
+        ensureGame();
+        go();
+      }
+    });
   }
   // ขอให้เบราว์เซอร์เก็บข้อมูลถาวร (iOS/Chrome จะไม่ล้างเอง)
   if (navigator.storage?.persist) {
