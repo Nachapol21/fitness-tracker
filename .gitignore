@@ -1,0 +1,10 @@
+# ข้อมูลส่วนตัว ห้ามขึ้น GitHub เด็ดขาด
+private/
+
+# ไฟล์สำรองข้อมูลที่ export จากแอป (มีข้อมูลส่วนตัว)
+fitness-tracker-backup*.json
+fitness-*.csv
+
+node_modules/
+.DS_Store
+Thumbs.db

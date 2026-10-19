@@ -1,0 +1,13 @@
+{
+  "name": "fitness-tracker",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "แอปฟิตเนส PWA: จดเวท จดกิน วิเคราะห์ (ไม่มี dependency ไม่ต้อง npm install)",
+  "scripts": {
+    "test": "node --test",
+    "serve": "python -m http.server 8080 --bind 127.0.0.1",
+    "icons": "node tools/make-icons.mjs",
+    "build-import": "node tools/build-initial-import.mjs"
+  }
+}

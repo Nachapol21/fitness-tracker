@@ -1,0 +1,20 @@
+{
+  "name": "แอปฟิตเนส — จดเวท จดกิน วิเคราะห์",
+  "short_name": "ฟิตเนส",
+  "description": "จดการฝึกเวท จดการกิน และวิเคราะห์ความคืบหน้า ใช้ออฟไลน์ได้",
+  "lang": "th",
+  "dir": "ltr",
+  "start_url": "./#/today",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1419",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
