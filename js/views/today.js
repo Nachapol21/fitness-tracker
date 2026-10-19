@@ -9,16 +9,18 @@ import { dateNav, nutritionSummary, sumLogs, waterCard } from './common.js';
 import { openStartSession } from './train.js';
 import { syncDot } from './account.js';
 import { gameCard } from './game.js';
+import { loadRecentMissing, openMissingList } from './food-estimate.js';
 
 export async function renderToday(root) {
   const date = getDate();
-  const [profile, foodLogs, waterLogs, bodyDay, bodyAll, sessions] = await Promise.all([
+  const [profile, foodLogs, waterLogs, bodyDay, bodyAll, sessions, missing] = await Promise.all([
     db.getProfile(),
     db.listByIndex('food_logs', 'date', date),
     db.listByIndex('water_logs', 'date', date),
     db.listByIndex('body_logs', 'date', date),
     db.list('body_logs'),
     db.listByIndex('sessions', 'date', date),
+    loadRecentMissing(), // มื้อที่ยังไม่มีแคลใน 7 วันล่าสุด (นับจากวันนี้จริง ไม่ใช่วันที่กำลังดู)
   ]);
   const refresh = () => renderToday(root);
   const body = bodyDay[0] || null;
@@ -57,6 +59,15 @@ export async function renderToday(root) {
       : null,
     recalc
       ? h('section', { class: 'card notice warn' }, h('p', null, `น้ำหนักเปลี่ยนไปจากตอนคำนวณเป้า (${fmtNum(profile.calc_weight_kg)} → ${fmtNum(lastW.weight)} กก.) ควรคำนวณเป้าใหม่`), h('a', { class: 'btn', href: '#/settings' }, 'ไปคำนวณใหม่'))
+      : null,
+    missing.length
+      ? h(
+          'section',
+          { class: 'card notice warn', id: 'missing-kcal-banner' },
+          h('p', null, h('strong', null, `มี ${missing.length} มื้อที่ยังไม่มีแคล`)),
+          h('p', { class: 'muted small-text' }, 'วันที่ยังมีมื้อไม่มีแคลจะยังไม่ได้ coin แคลอรี่ และไฟของวันนั้นยังไม่ผ่านเงื่อนไขแคลอรี่ · เติมแล้วคำนวณใหม่ให้เอง'),
+          h('button', { class: 'btn primary', id: 'btn-fill-missing', onclick: () => openMissingList({ onDone: refresh }) }, 'เติมแคล')
+        )
       : null,
     gameEl,
     h(

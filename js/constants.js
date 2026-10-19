@@ -1,6 +1,6 @@
 // ค่าคงที่ที่ใช้ร่วมกันทั้งแอป (ไม่มี DOM จึงใช้ใน Node ได้)
 
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 export const DATA_FORMAT = 'fitness-tracker';
 // v2: เพิ่มตารางเกม (game_settings, rewards, redemptions) — แอปรุ่นเก่าจะปฏิเสธไฟล์นี้แทนที่จะทิ้งข้อมูลเกมเงียบๆ
 export const DATA_VERSION = 2;
@@ -12,6 +12,9 @@ export const PROFILE_ID = '00000000-0000-4000-8000-000000000001';
 // เพราะแอปรุ่นก่อนข้ามแถวของ collection ที่ไม่รู้จักแล้วเลื่อน cursor ผ่านไป
 export const SYNC_TABLES_VERSION = 2;
 export const GAME_SETTINGS_ID = '00000000-0000-4000-8000-000000000002';
+// ค่าปุ่มกะขนาดมื้อที่ผู้ใช้แก้ (จดการกินแบบกะเอา): เรคคอร์ดตั้งค่าที่ id คงที่ในตาราง profile ที่มีอยู่แล้ว (ไม่เพิ่ม collection จึงไม่ต้องขึ้น SYNC_TABLES_VERSION)
+// แยกจากเรคคอร์ดโปรไฟล์ (…001) เพื่อไม่ให้การแก้ปุ่มบนเครื่องที่ยังไม่ได้ซิงก์ไปทับเป้าหมายของโปรไฟล์ตอนรวมข้อมูล
+export const FOOD_PRESETS_ID = '00000000-0000-4000-8000-000000000003';
 
 // ตารางข้อมูลที่ซิงก์/export ได้ (meta เป็นของเครื่องนั้นๆ ไม่รวม)
 export const TABLES = [

@@ -444,7 +444,8 @@ a {
 }
 .chip {
   appearance: none;
-  min-height: 42px;
+  min-height: 44px;
+  min-width: 44px;
   padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -603,6 +604,15 @@ textarea.input {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
+  white-space: nowrap;
+}
+.tag.warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.tag.est {
+  background: var(--info-bg);
+  color: var(--text);
 }
 
 /* ---------- แถบความคืบหน้า ---------- */
@@ -704,6 +714,88 @@ textarea.input {
 }
 .fav small {
   font-size: 0.75rem;
+}
+/* ---------- จดการกินแบบกะเอา ---------- */
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.preset {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 92px;
+  padding: 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.preset:active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.preset-emoji {
+  font-size: 1.7rem;
+  line-height: 1.1;
+}
+.preset-name {
+  font-size: 0.9rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.preset small {
+  font-size: 0.75rem;
+}
+.preset-grid.compact .preset {
+  min-height: 74px;
+}
+.recent-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.recent-chip {
+  appearance: none;
+  flex: 0 0 auto;
+  max-width: 170px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.recent-chip:active {
+  background: var(--accent-soft);
+}
+.recent-chip small {
+  font-size: 0.75rem;
+}
+.grid4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.grid4 .field-label {
+  font-size: 0.78rem;
 }
 .stepper {
   display: flex;
@@ -945,6 +1037,10 @@ textarea.input {
 .chart .bar-rect.under {
   fill: var(--c2);
 }
+.chart .bar-rect.partial {
+  fill: var(--c2);
+  opacity: 0.4;
+}
 .chart .bar-rect.none {
   fill: var(--c1);
   opacity: 0.55;
@@ -1000,6 +1096,12 @@ textarea.input {
   background: #1f2a35;
   color: #fff;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  overflow-wrap: anywhere;
+}
+.toast > span,
+.list-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 :root[data-theme='dark'] .toast {
   background: #e8eef3;
@@ -1012,7 +1114,8 @@ textarea.input {
   color: #5eead4;
   font: inherit;
   font-weight: 700;
-  min-height: 36px;
+  min-height: 44px;
+  min-width: 44px;
   cursor: pointer;
 }
 :root[data-theme='dark'] .toast-action {

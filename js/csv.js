@@ -1,5 +1,7 @@
 // แปลงตารางเป็น CSV (ไม่มี DOM ใช้ทดสอบใน Node ได้)
 
+import { isKcalMissing } from './food-quick.js';
+
 export const BOM = '﻿'; // ให้ Excel อ่านภาษาไทย (UTF-8) ได้ถูกต้อง
 
 function cell(v) {
@@ -8,6 +10,15 @@ function cell(v) {
   // กัน Excel ตีความข้อความว่าเป็นสูตร (CSV injection)
   if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * เตรียมแถวก่อนแปลงเป็น CSV: food_logs ต้องมีคอลัมน์ is_estimate และ kcal_missing ทุกแถวเสมอ
+ * (log เดิมที่ไม่มีสองฟิลด์นี้ = ไม่ใช่ค่ากะ is_estimate=false · kcal_missing ดูจาก kcal เป็นว่างหรือมีธง)
+ */
+export function csvRowsFor(table, rows) {
+  if (table !== 'food_logs') return rows;
+  return rows.map((r) => ({ ...r, is_estimate: r.is_estimate === true, kcal_missing: isKcalMissing(r) }));
 }
 
 /** rows: array ของ object → ข้อความ CSV (ขึ้นต้นด้วย BOM, ขึ้นบรรทัดใหม่แบบ CRLF) */

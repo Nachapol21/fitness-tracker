@@ -2,6 +2,7 @@
 
 import * as db from '../db.js';
 import { fmtLong, toDateStr } from '../dates.js';
+import { isKcalMissing } from '../food-quick.js';
 import { fmtInt, fmtNum, h, icon, progress, toast } from '../ui.js';
 
 export function dateNav(date, onChange) {
@@ -27,10 +28,11 @@ function shift(date, n) {
   return toDateStr(new Date(y, m - 1, d + n));
 }
 
-/** สรุป kcal/โปรตีน/คาร์บ/ไขมันของวัน เทียบเป้า */
+/** สรุป kcal/โปรตีน/คาร์บ/ไขมันของวัน เทียบเป้า · totals.missing > 0 = ยังมีมื้อไม่มีแคล ยอดเป็นค่าขั้นต่ำ ("≥") */
 export function nutritionSummary(totals, profile) {
   const t = Number(profile.kcal) || 0;
   const tol = Number(profile.kcal_tolerance) || 0;
+  const missing = totals.missing || 0;
   const over = t > 0 && totals.kcal > t + tol;
   const remain = t - totals.kcal;
   const pMin = Number(profile.protein_min) || 0;
@@ -50,10 +52,12 @@ export function nutritionSummary(totals, profile) {
     h(
       'div',
       { class: 'kcal-head' },
-      h('div', null, h('span', { class: 'big' }, fmtInt(totals.kcal)), h('span', { class: 'muted' }, t > 0 ? ` / ${fmtInt(t)} kcal` : ' kcal')),
-      t > 0
-        ? h('div', { class: over ? 'bad-text' : 'muted' }, over ? `เกินเป้า ${fmtInt(-remain)}` : remain >= 0 ? `เหลือ ${fmtInt(remain)}` : `เกิน ${fmtInt(-remain)} (ยังอยู่ในช่วงที่รับได้)`)
-        : null
+      h('div', null, h('span', { class: 'big', id: 'kcal-total' }, `${missing ? '≥ ' : ''}${fmtInt(totals.kcal)}`), h('span', { class: 'muted' }, t > 0 ? ` / ${fmtInt(t)} kcal` : ' kcal')),
+      missing
+        ? h('div', { class: 'warn-text', id: 'kcal-incomplete' }, `ยังไม่มีแคล ${missing} มื้อ`)
+        : t > 0
+          ? h('div', { class: over ? 'bad-text' : 'muted' }, over ? `เกินเป้า ${fmtInt(-remain)}` : remain >= 0 ? `เหลือ ${fmtInt(remain)}` : `เกิน ${fmtInt(-remain)} (ยังอยู่ในช่วงที่รับได้)`)
+          : null
     ),
     t > 0 ? progress(totals.kcal, t, { cls: over ? 'over' : '' }) : null,
     macro('โปรตีน', totals.protein, pMin || pMax, `${fmtNum(totals.protein, 0)} / ${pMin && pMax ? `${pMin}–${pMax}` : pMin || pMax || '–'} ก.`, pMin && totals.protein >= pMin ? 'good' : ''),
@@ -66,9 +70,14 @@ export function nutritionSummary(totals, profile) {
   );
 }
 
+/** รวมสารอาหารของ log · มื้อที่ยังไม่มีแคลไม่นับแคล/โปรตีน/คาร์บ/ไขมัน แต่นับจำนวนไว้ใน missing */
 export function sumLogs(logs) {
-  const t = { kcal: 0, protein: 0, carb: 0, fat: 0 };
+  const t = { kcal: 0, protein: 0, carb: 0, fat: 0, missing: 0 };
   for (const l of logs) {
+    if (isKcalMissing(l)) {
+      t.missing += 1;
+      continue;
+    }
     t.kcal += Number(l.kcal) || 0;
     t.protein += Number(l.protein) || 0;
     t.carb += Number(l.carb) || 0;

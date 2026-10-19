@@ -73,6 +73,26 @@ export const fmtNum = (n, d = 1) => {
 export const fmtInt = (n) => (n === null || n === undefined || Number.isNaN(n) ? '–' : Math.round(n).toLocaleString('en-US'));
 
 /** อ่านค่าตัวเลขจากช่อง input ('' → null, รองรับ , เป็นจุดทศนิยม) */
+/** ห่อ onclick แบบ async: ปิดปุ่มระหว่างทำงาน กันกดซ้ำแล้วได้รายการซ้ำ */
+export function busyClick(fn) {
+  return async (ev) => {
+    const b = ev?.currentTarget;
+    if (b?.dataset.busy) return;
+    if (b) {
+      b.dataset.busy = '1';
+      b.disabled = true;
+    }
+    try {
+      await fn(ev);
+    } finally {
+      if (b) {
+        delete b.dataset.busy;
+        b.disabled = false;
+      }
+    }
+  };
+}
+
 export function readNum(input) {
   const raw = String(input.value ?? '').trim().replace(',', '.');
   if (raw === '') return null;

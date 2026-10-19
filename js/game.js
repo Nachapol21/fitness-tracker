@@ -8,6 +8,8 @@
 // กติกาสำคัญ (ค่าตัวเลขทั้งหมดอยู่ใน DEFAULT_GAME_SETTINGS แก้ได้):
 //  - กิจกรรมที่ created_at (เวลาไทย) ช้ากว่า date เกิน backdate_days หรือถูกสร้างก่อนวันของมัน (จดล่วงหน้า) ไม่ได้ coin แต่ยังนับใน streak/สถิติ
 //  - coin นับเฉพาะวันที่ ≥ start_date (ไฟนับจากประวัติทั้งหมดเสมอ)
+//  - วันที่ยังมีมื้อที่ยังไม่มีแคล (kcal เป็น null/kcal_missing) = "แคลอรี่ไม่ครบ": ไม่ได้ coin แคลอรี่และเงื่อนไขแคลอรี่ของไฟยังไม่ผ่าน · มื้อนั้นไม่นับโปรตีน (โปรตีนจากมื้ออื่นยังได้ coin ถ้าถึงเป้า)
+//    เติมแคลทีหลังแล้วคำนวณใหม่เองจาก log (ไม่ต้องทำอะไรเพิ่ม)
 //  - coin แคลอรี่ของ "วันนี้" ยังไม่นับจนกว่าวันจะจบ (กินเพิ่มแล้วอาจออกนอกช่วง) ส่วนอื่นนับทันที
 //  - ตัวคูณของวัน D ใช้ความยาวไฟ ณ สิ้นวัน D−1, ปัดเศษลงต่อรายการ, ไม่คูณโบนัสรายสัปดาห์
 //  - วันนี้ไม่มีวัน "พลาด" (ยังไม่จบ) และไฟสำรองไม่ถูกใช้กับวันนี้
@@ -15,6 +17,7 @@
 import { DEFAULT_GAME_SETTINGS } from './constants.js';
 import { addDays, dateRange, diffDays, isDateStr, weekStart, weekday } from './dates.js';
 import { buildHistories, isWorkingSet, num } from './analytics.js';
+import { isKcalMissing } from './food-quick.js';
 import { toMs } from './lww.js';
 
 const THAI_OFFSET_MS = 7 * 3600 * 1000;
@@ -165,11 +168,15 @@ export function computeGame(input) {
   const aggIntake = (logs) => {
     const m = new Map();
     for (const l of logs) {
-      if (!m.has(l.date)) m.set(l.date, { kcal: 0, protein: 0, meals: new Set() });
+      if (!m.has(l.date)) m.set(l.date, { kcal: 0, protein: 0, meals: new Set(), missing: 0 });
       const t = m.get(l.date);
+      t.meals.add(l.meal || '?');
+      if (isKcalMissing(l)) {
+        t.missing++; // มื้อที่ยังไม่มีแคล: ไม่นับแคลและโปรตีน แต่ทำให้ยอดของวัน "ไม่ครบ"
+        continue;
+      }
       t.kcal += n0(l.kcal);
       t.protein += n0(l.protein);
-      t.meals.add(l.meal || '?');
     }
     for (const t of m.values()) t.kcal = round1(t.kcal);
     return m;
@@ -180,7 +187,7 @@ export function computeGame(input) {
   const tol = Math.max(0, num(profile.kcal_tolerance) ?? 100); // ± เดียวกับ analytics.kcalOk (ค่าเริ่มต้น 100)
   const kcalLo = target === null ? null : target - (s.kcal_below ?? tol);
   const kcalHi = target === null ? null : target + (s.kcal_above ?? tol);
-  const kcalInRange = (t) => target !== null && !!t && t.meals.size >= s.kcal_min_meals && t.kcal >= kcalLo && t.kcal <= kcalHi;
+  const kcalInRange = (t) => target !== null && !!t && !t.missing && t.meals.size >= s.kcal_min_meals && t.kcal >= kcalLo && t.kcal <= kcalHi; // มีมื้อไม่มีแคล = ยอดไม่ครบ ไม่ผ่าน
   const proteinMin = n0(profile.protein_min);
   const stepGoal = n0(profile.step_goal);
 
@@ -362,7 +369,8 @@ export function computeGame(input) {
       });
     }
     const tf = intakeFresh.get(d);
-    if (!isToday && kcalInRange(tf)) push('kcal', s.coin_kcal, d); // วันนี้รอจบวันก่อน
+    const missingToday = intakeAll.get(d)?.missing || 0; // นับจากทุก log ของวัน ไม่เฉพาะที่สด
+    if (!isToday && !missingToday && kcalInRange(tf)) push('kcal', s.coin_kcal, d); // วันนี้รอจบวันก่อน
     if (proteinMin > 0 && tf && tf.protein >= proteinMin) push('protein', s.coin_protein, d);
     const bf = bodyFresh.get(d);
     if (stepGoal > 0 && bf && bf.steps >= stepGoal) push('steps', s.coin_steps, bf.stepsId);
@@ -394,7 +402,8 @@ export function computeGame(input) {
         add('protein', `โปรตีนอีก ${Math.ceil(proteinMin - (tf?.protein || 0))} ก.`, s.coin_protein);
       }
       if (target !== null && s.coin_kcal > 0) {
-        if (kcalInRange(tf)) add('kcal', 'แคลอรี่อยู่ในช่วงเป้าแล้ว รับ coin ตอนจบวัน', s.coin_kcal, true);
+        if (missingToday > 0) add('kcal', `เติมแคลอีก ${missingToday} มื้อเพื่อนับ coin แคลอรี่`, s.coin_kcal, true);
+        else if (kcalInRange(tf)) add('kcal', 'แคลอรี่อยู่ในช่วงเป้าแล้ว รับ coin ตอนจบวัน', s.coin_kcal, true);
         else add('kcal', `จดอย่างน้อย ${s.kcal_min_meals} มื้อ ให้แคลอรี่อยู่ในช่วง ${Math.round(kcalLo)}–${Math.round(kcalHi)} kcal รับ coin ตอนจบวัน`, s.coin_kcal, true);
       }
       if (stepGoal > 0 && s.coin_steps > 0 && !(bf && bf.steps >= stepGoal)) {
@@ -411,7 +420,8 @@ export function computeGame(input) {
         qualified: wkDone,
         kcal: tf?.kcal || 0,
         meals: tf ? tf.meals.size : 0,
-        kcalInRange: kcalInRange(tf),
+        kcalInRange: !missingToday && kcalInRange(tf),
+        missingKcalMeals: missingToday, // จำนวนมื้อของวันนี้ที่ยังไม่มีแคล (แคลอรี่ไม่ครบ)
         protein: tf?.protein || 0,
         steps: bf?.steps || 0,
         weighed: !!bf?.weighId,

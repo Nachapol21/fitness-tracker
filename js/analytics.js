@@ -2,6 +2,7 @@
 // รับ array ของเรคคอร์ดที่ยังไม่ถูกลบเข้ามา แล้วคืนค่าที่คำนวณได้ ทดสอบได้ด้วย: node --test tests/
 
 import { addDays, dateRange, diffDays, isDateStr, weekStart } from './dates.js';
+import { isKcalMissing } from './food-quick.js';
 
 export const KCAL_PER_KG = 7700; // พลังงานต่อน้ำหนักตัว 1 กก. (ค่าประมาณที่ใช้กันทั่วไป)
 
@@ -198,17 +199,25 @@ export function weightAssessment(points, profile, asOf) {
 
 // ---------- 4–5. การกิน ----------
 
-/** รวมสารอาหารต่อวัน → { 'YYYY-MM-DD': {date,kcal,protein,carb,fat,entries} } */
+/**
+ * รวมสารอาหารต่อวัน → { 'YYYY-MM-DD': {date,kcal,protein,carb,fat,entries,missing} }
+ * missing = จำนวนมื้อที่ยังไม่มีแคล (kcal เป็น null/kcal_missing): มื้อนั้นไม่นับแคล/โปรตีน/คาร์บ/ไขมัน
+ * และวันที่ missing > 0 คือ "แคลอรี่ไม่ครบ" ยอดรวมเป็นแค่ขั้นต่ำ (ไม่ใช้ประมาณ TDEE/ค่าเฉลี่ยแคล)
+ */
 export function dailyIntake(foodLogs) {
   const m = {};
   for (const l of live(foodLogs)) {
     if (!isDateStr(l.date)) continue;
-    const t = (m[l.date] ||= { date: l.date, kcal: 0, protein: 0, carb: 0, fat: 0, entries: 0 });
+    const t = (m[l.date] ||= { date: l.date, kcal: 0, protein: 0, carb: 0, fat: 0, entries: 0, missing: 0 });
+    t.entries += 1;
+    if (isKcalMissing(l)) {
+      t.missing += 1;
+      continue;
+    }
     t.kcal += num(l.kcal) || 0;
     t.protein += num(l.protein) || 0;
     t.carb += num(l.carb) || 0;
     t.fat += num(l.fat) || 0;
-    t.entries += 1;
   }
   return m;
 }
@@ -226,44 +235,59 @@ export function proteinOk(protein, profile) {
   return protein >= p;
 }
 
-/** สรุปการกินในช่วงวันที่ที่กำหนด เทียบเป้า */
+/**
+ * สรุปการกินในช่วงวันที่ที่กำหนด เทียบเป้า
+ * วัน "แคลอรี่ไม่ครบ" (incomplete = มีมื้อที่ยังไม่มีแคล): นับเป็นวันที่จด (loggedDays) แต่ไม่เอาไปเฉลี่ยแคล/โปรตีน
+ * และไม่ตัดสินว่าแคลอยู่ในเป้า (kcalOk = null) — ยอดของวันนั้นเป็นแค่ขั้นต่ำ · โปรตีนที่ถึงเป้าแล้วจากมื้ออื่นยังนับว่าถึงเป้า
+ */
 export function intakeSummary(daily, profile, dates) {
   const days = dates.map((date) => {
     const t = daily[date];
+    const incomplete = !!t && t.missing > 0;
     return {
       date,
       logged: !!t && t.entries > 0,
+      incomplete,
+      missingMeals: t ? t.missing || 0 : 0,
       kcal: t ? t.kcal : 0,
       protein: t ? t.protein : 0,
       carb: t ? t.carb : 0,
       fat: t ? t.fat : 0,
-      kcalOk: t ? kcalOk(t.kcal, profile) : null,
-      proteinOk: t ? proteinOk(t.protein, profile) : null,
+      kcalOk: t && !incomplete ? kcalOk(t.kcal, profile) : null,
+      // วันที่ไม่ครบ: โปรตีนเป็นแค่ค่าขั้นต่ำ — ถึงเป้าแล้วนับว่าผ่าน ถ้ายังไม่ถึงถือว่ายังตัดสินไม่ได้ (null)
+      proteinOk: !t ? null : incomplete ? (proteinOk(t.protein, profile) ? true : null) : proteinOk(t.protein, profile),
     };
   });
   const logged = days.filter((d) => d.logged);
+  const complete = logged.filter((d) => !d.incomplete);
   return {
     days,
     loggedDays: logged.length,
+    completeDays: complete.length,
+    incompleteDays: logged.length - complete.length,
     totalDays: dates.length,
-    avgKcal: logged.length ? mean(logged.map((d) => d.kcal)) : null,
-    avgProtein: logged.length ? mean(logged.map((d) => d.protein)) : null,
-    kcalOkDays: logged.filter((d) => d.kcalOk).length,
+    avgKcal: complete.length ? mean(complete.map((d) => d.kcal)) : null,
+    avgProtein: complete.length ? mean(complete.map((d) => d.protein)) : null,
+    kcalOkDays: complete.filter((d) => d.kcalOk).length,
     proteinOkDays: logged.filter((d) => d.proteinOk).length,
+    // ตัวหารของ "ถึงเป้าโปรตีน X/Y วัน": ไม่นับวันที่ไม่ครบซึ่งยังตัดสินไม่ได้
+    proteinJudgedDays: logged.filter((d) => d.proteinOk != null).length,
   };
 }
 
 /**
  * ประมาณ TDEE จริง = แคลอรี่ที่กินเฉลี่ย − (การเปลี่ยนน้ำหนักต่อวัน × 7700)
- * ต้องมี: จดอาหารครบ ≥14 วัน (วันละ ≥800 kcal นับว่าจดครบ), ชั่งน้ำหนัก ≥4 ครั้ง ห่างกัน ≥12 วัน
+ * ต้องมี: จดอาหารครบ ≥14 วัน (วันละ ≥800 kcal นับว่าจดครบ · วันที่ยังมีมื้อไม่มีแคลถูกตัดออก), ชั่งน้ำหนัก ≥4 ครั้ง ห่างกัน ≥12 วัน
  * ไม่ถึงเกณฑ์ → { ok:false } พร้อมจำนวนที่มีอยู่ เพื่อแสดง "ข้อมูลยังไม่พอ"
  */
 export function estimateTDEE(points, daily, profile, { asOf, windowDays = 28, minDays = 14 } = {}) {
   const from = addDays(asOf, -(windowDays - 1));
   const pts = points.filter((p) => p.date >= from && p.date <= asOf);
-  const loggedDates = dateRange(from, asOf).filter((d) => daily[d] && daily[d].kcal >= 800);
+  const windowDates = dateRange(from, asOf);
+  const loggedDates = windowDates.filter((d) => daily[d] && !daily[d].missing && daily[d].kcal >= 800);
+  const incompleteDays = windowDates.filter((d) => daily[d] && daily[d].missing > 0).length; // วันที่แคลอรี่ไม่ครบ (ตัดออกจากการประมาณ)
   const weighSpan = pts.length ? diffDays(pts[0].date, pts[pts.length - 1].date) : 0;
-  const info = { loggedDays: loggedDates.length, weighIns: pts.length, weighSpan, minDays };
+  const info = { loggedDays: loggedDates.length, incompleteDays, weighIns: pts.length, weighSpan, minDays };
 
   if (loggedDates.length < minDays || pts.length < 4 || weighSpan < 12) return { ok: false, ...info };
 
@@ -519,9 +543,12 @@ export function weeklySummary({ ws, asOf, bodyLogs, foodLogs, sessions, sets, ca
         : `สัปดาห์นี้ฝึกแล้ว ${sessionCount} จาก ${target} ครั้ง`
     );
   }
+  if (intake.incompleteDays > 0) {
+    advice.push(`มี ${intake.incompleteDays} วันที่ยังมีมื้อไม่มีแคล — เติมแคล (แตะรายการที่มีป้าย "ยังไม่มีแคล") แล้วสรุปแคลอรี่กับ coin จะนับวันนั้นให้`);
+  }
   if (intake.loggedDays < Math.min(4, dates.length)) {
     advice.push(`จดอาหารได้ ${intake.loggedDays} จาก ${dates.length} วัน — จดให้ครบขึ้นสรุปจะแม่นขึ้น`);
-  } else if (intake.loggedDays > 0) {
+  } else if (intake.completeDays > 0) {
     const pMin = num(profile?.protein_min);
     if (pMin > 0 && intake.avgProtein < pMin) {
       advice.push(`โปรตีนเฉลี่ย ${round(intake.avgProtein)} ก. ต่ำกว่าเป้า ${pMin} ก. — เพิ่มอกไก่ ไข่ นม หรือเวย์`);

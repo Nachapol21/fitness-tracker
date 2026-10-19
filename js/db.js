@@ -8,8 +8,9 @@
 // ตาราง 'meta' และ 'dirty' เป็นค่าเฉพาะเครื่อง (ไม่ซิงก์ ไม่ export)
 //   dirty = รายการที่เขียนในเครื่องแล้วแต่ยังไม่ได้ push ขึ้นเซิร์ฟเวอร์ (เขียนใน transaction เดียวกับตัวข้อมูล)
 
-import { DATA_FORMAT, DATA_VERSION, DEFAULT_GAME_SETTINGS, DEFAULT_PROFILE, GAME_SETTINGS_ID, PROFILE_ID, TABLES } from './constants.js';
-import { SEED_VERSION, seedExercises, seedFoods, seedRewards } from './seed.js';
+import { DATA_FORMAT, DATA_VERSION, DEFAULT_GAME_SETTINGS, DEFAULT_PROFILE, FOOD_PRESETS_ID, GAME_SETTINGS_ID, PROFILE_ID, TABLES } from './constants.js';
+import { SEED_VERSION, planFoodSeed, seedExercises, seedRewards } from './seed.js';
+import { resolvePresets } from './food-quick.js';
 import { mergeRows, toMs } from './lww.js';
 import { isDateStr } from './dates.js';
 import { thaiDay } from './game.js';
@@ -233,6 +234,23 @@ export async function saveGameSettings(patch) {
   return create('game_settings', { ...DEFAULT_GAME_SETTINGS, ...patch, id: GAME_SETTINGS_ID });
 }
 
+// ---------- ค่าปุ่มกะขนาดมื้อ (เรคคอร์ดเดียว id คงที่ ในตาราง profile) ----------
+
+/** ปุ่มกะ 6 ปุ่มพร้อมค่าที่ผู้ใช้แก้ (ไม่มีเรคคอร์ด/ค่าเพี้ยน = ค่าเริ่มต้น) */
+export async function getFoodPresets() {
+  const r = await get('profile', FOOD_PRESETS_ID);
+  return resolvePresets(r?.presets);
+}
+
+/** overrides = { [key]: {kcal,protein,carb,fat} } · ส่ง null/{} = คืนค่าเริ่มต้นทั้งหมด (ไม่สร้างเรคคอร์ดใหม่ถ้ายังไม่มี) */
+export async function saveFoodPresets(overrides) {
+  const presets = overrides && Object.keys(overrides).length ? overrides : null;
+  const existing = await withStores('profile', 'readonly', (st) => reqP(st.get(FOOD_PRESETS_ID)));
+  if (existing) return update('profile', FOOD_PRESETS_ID, { presets, deleted: false });
+  if (!presets) return null;
+  return create('profile', { id: FOOD_PRESETS_ID, presets });
+}
+
 // ---------- งานเฉพาะโดเมน ----------
 
 /** ลบครั้งที่ฝึก พร้อมเซ็ตและคาร์ดิโอของครั้งนั้น (soft delete ทั้งหมด) */
@@ -267,7 +285,10 @@ async function seedMissing(table, rows) {
 export async function ensureSeed() {
   const done = await getMeta('seed_version', 0);
   if (done >= SEED_VERSION) return false;
-  for (const [table, rows] of [['exercises', seedExercises()], ['foods', seedFoods()], ['rewards', seedRewards()]]) await seedMissing(table, rows);
+  // อาหาร: v3 เพิ่มเมนูไทยเพิ่มเติม ข้ามรายการที่ชื่อซ้ำกับของเดิมหรืออาหารที่ผู้ใช้สร้างเอง (รวมที่ลบไปแล้ว) — แผนอยู่ใน planFoodSeed
+  const plan = planFoodSeed(await list('foods', { includeDeleted: true }));
+  for (const [table, rows] of [['exercises', seedExercises()], ['foods', plan.add], ['rewards', seedRewards()]]) await seedMissing(table, rows);
+  await setMeta('seed_food_report', { version: SEED_VERSION, added: plan.add.length, skipped: plan.skipped });
   await setMeta('seed_version', SEED_VERSION);
   if (!(await getMeta('first_run_at'))) await setMeta('first_run_at', nowIso());
   return true;

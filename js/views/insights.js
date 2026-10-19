@@ -67,8 +67,8 @@ function weekTab({ data, profile, today, rerender }) {
     'div',
     { class: 'stats' },
     stat('น้ำหนักเฉลี่ย', sum.avgWeight != null ? `${fmtNum(sum.avgWeight)} กก.` : '–', sum.weightDelta != null ? `${sum.weightDelta > 0 ? '+' : ''}${fmtNum(sum.weightDelta, 2)} จากสัปดาห์ก่อน` : `ชั่ง ${sum.weighIns} ครั้ง`),
-    stat('แคลอรี่เฉลี่ย', i.avgKcal != null ? `${fmtInt(i.avgKcal)}` : '–', i.loggedDays ? `จด ${i.loggedDays}/${i.totalDays} วัน${profile.kcal ? ` · ตามเป้า ${i.kcalOkDays} วัน` : ''}` : 'ยังไม่ได้จดอาหาร'),
-    stat('โปรตีนเฉลี่ย', i.avgProtein != null ? `${fmtNum(i.avgProtein, 0)} ก.` : '–', i.loggedDays && profile.protein_min ? `ถึงเป้า ${i.proteinOkDays}/${i.loggedDays} วัน` : ''),
+    stat('แคลอรี่เฉลี่ย', i.avgKcal != null ? `${fmtInt(i.avgKcal)}` : '–', i.loggedDays ? `จด ${i.loggedDays}/${i.totalDays} วัน${profile.kcal && i.completeDays ? ` · ตามเป้า ${i.kcalOkDays} วัน` : ''}${i.incompleteDays ? ` · ไม่ครบ ${i.incompleteDays} วัน (ยังมีมื้อไม่มีแคล)` : ''}` : 'ยังไม่ได้จดอาหาร'),
+    stat('โปรตีนเฉลี่ย', i.avgProtein != null ? `${fmtNum(i.avgProtein, 0)} ก.` : '–', i.loggedDays && profile.protein_min ? `ถึงเป้า ${i.proteinOkDays}/${i.proteinJudgedDays} วัน` : ''),
     stat('ฝึก', `${sum.sessionCount} / ${sum.sessionTarget}`, 'ครั้ง')
   );
   return h(
@@ -175,8 +175,10 @@ function foodTab({ data, profile, today, rerender }) {
     },
   });
   const lab = (d) => String(Number(d.slice(8)));
-  const kBars = sum.days.map((d) => ({ label: lab(d.date), value: d.kcal, cls: !d.logged ? 'none' : t ? (d.kcalOk ? 'ok' : d.kcal > t ? 'over' : 'under') : 'ok' }));
-  const pBars = sum.days.map((d) => ({ label: lab(d.date), value: d.protein, cls: !d.logged ? 'none' : pMin ? (d.proteinOk ? 'ok' : 'under') : 'ok' }));
+  // วันที่ยังมีมื้อไม่มีแคล (incomplete) ยอดเป็นค่าขั้นต่ำ: แท่งสีจาง 'partial' ไม่ตัดสินว่าถึงเป้าไหม
+  const kBars = sum.days.map((d) => ({ label: lab(d.date), value: d.kcal, cls: !d.logged ? 'none' : d.incomplete ? 'partial' : t ? (d.kcalOk ? 'ok' : d.kcal > t ? 'over' : 'under') : 'ok' }));
+  const pBars = sum.days.map((d) => ({ label: lab(d.date), value: d.protein, cls: !d.logged ? 'none' : pMin ? (d.proteinOk ? 'ok' : d.incomplete ? 'partial' : 'under') : 'ok' }));
+  const incompleteNote = sum.incompleteDays ? h('small', { class: 'muted', id: 'incomplete-note' }, `แท่งสีจาง = วันที่ยังมีมื้อไม่มีแคล ${sum.incompleteDays} วัน (ยอดเป็นค่าขั้นต่ำ ไม่นับในค่าเฉลี่ยแคลและการประมาณ TDEE) — แตะรายการที่มีป้าย "ยังไม่มีแคล" ในหน้ากินเพื่อเติม`) : null;
   const w = cleanWeights(data.body_logs);
   const est = estimateTDEE(w, daily, profile, { asOf: today });
 
@@ -199,7 +201,7 @@ function foodTab({ data, profile, today, rerender }) {
         'section',
         { class: 'card' },
         h('h2', null, 'ประมาณ TDEE จริง'),
-        callout('info', `ข้อมูลยังไม่พอ — ต้องจดอาหารอย่างน้อย ${est.minDays} วัน (ตอนนี้ ${est.loggedDays} วันใน 28 วันล่าสุด) และชั่งน้ำหนักอย่างน้อย 4 ครั้งที่ห่างกันเกิน 12 วัน (ตอนนี้ ${est.weighIns} ครั้ง ห่างกัน ${est.weighSpan} วัน)`),
+        callout('info', `ข้อมูลยังไม่พอ — ต้องจดอาหารอย่างน้อย ${est.minDays} วัน (ตอนนี้ ${est.loggedDays} วันใน 28 วันล่าสุด${est.incompleteDays ? ` ไม่นับ ${est.incompleteDays} วันที่ยังมีมื้อไม่มีแคล` : ''}) และชั่งน้ำหนักอย่างน้อย 4 ครั้งที่ห่างกันเกิน 12 วัน (ตอนนี้ ${est.weighIns} ครั้ง ห่างกัน ${est.weighSpan} วัน)`),
         h('small', { class: 'muted' }, 'เมื่อข้อมูลครบ แอปจะเทียบแคลอรี่ที่กินกับน้ำหนักที่เปลี่ยน เพื่อประมาณ TDEE จริงของคุณและแนะนำเป้าใหม่')
       );
 
@@ -212,14 +214,15 @@ function foodTab({ data, profile, today, rerender }) {
       { class: 'card' },
       h('h2', null, 'แคลอรี่ต่อวัน'),
       sum.loggedDays ? barChart({ bars: kBars, band: t ? [t - tol, t + tol] : undefined, ref: t || undefined, refLabel: t ? `เป้า ${fmtInt(t)}` : '', aria: 'กราฟแคลอรี่รายวัน' }) : noData('ยังไม่ได้จดอาหารในช่วงนี้'),
-      h('div', { class: 'stats' }, stat('เฉลี่ย', sum.avgKcal != null ? `${fmtInt(sum.avgKcal)} kcal` : '–', `จด ${sum.loggedDays}/${sum.totalDays} วัน`), t ? stat('ตามเป้า', `${sum.kcalOkDays}/${sum.loggedDays} วัน`, `${fmtInt(t - tol)}–${fmtInt(t + tol)} kcal`) : null)
+      incompleteNote,
+      h('div', { class: 'stats' }, stat('เฉลี่ย', sum.avgKcal != null ? `${fmtInt(sum.avgKcal)} kcal` : '–', `จด ${sum.loggedDays}/${sum.totalDays} วัน${sum.incompleteDays ? ` · ไม่ครบ ${sum.incompleteDays}` : ''}`), t ? stat('ตามเป้า', `${sum.kcalOkDays}/${sum.completeDays} วัน`, `${fmtInt(t - tol)}–${fmtInt(t + tol)} kcal`) : null)
     ),
     h(
       'section',
       { class: 'card' },
       h('h2', null, 'โปรตีนต่อวัน (ก.)'),
       sum.loggedDays ? barChart({ bars: pBars, ref: pMin || undefined, refLabel: pMin ? `เป้า ${pMin}` : '', aria: 'กราฟโปรตีนรายวัน' }) : noData('ยังไม่ได้จดอาหารในช่วงนี้'),
-      h('div', { class: 'stats' }, stat('เฉลี่ย', sum.avgProtein != null ? `${fmtNum(sum.avgProtein, 0)} ก.` : '–'), pMin ? stat('ถึงเป้า', `${sum.proteinOkDays}/${sum.loggedDays} วัน`, `≥ ${pMin} ก.`) : null)
+      h('div', { class: 'stats' }, stat('เฉลี่ย', sum.avgProtein != null ? `${fmtNum(sum.avgProtein, 0)} ก.` : '–'), pMin ? stat('ถึงเป้า', `${sum.proteinOkDays}/${sum.proteinJudgedDays} วัน`, `≥ ${pMin} ก.`) : null)
     ),
     tdeeCard
   );

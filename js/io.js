@@ -1,6 +1,6 @@
 // ส่งออก/นำเข้าไฟล์ (JSON ทั้งหมด, CSV รายตาราง) — ส่วนที่แตะเบราว์เซอร์
 
-import { toCSV } from './csv.js';
+import { csvRowsFor, toCSV } from './csv.js';
 import * as db from './db.js';
 import { TABLES } from './constants.js';
 import { toDateStr } from './dates.js';
@@ -46,7 +46,7 @@ export async function exportJSON() {
 
 export async function exportCSV(table) {
   const rows = await db.list(table, { includeDeleted: false });
-  return saveFile(`fitness-${table}-${toDateStr()}.csv`, 'text/csv;charset=utf-8', toCSV(rows));
+  return saveFile(`fitness-${table}-${toDateStr()}.csv`, 'text/csv;charset=utf-8', toCSV(csvRowsFor(table, rows)));
 }
 
 /** อ่านไฟล์ JSON ที่ผู้ใช้เลือก แล้วนำเข้า */
