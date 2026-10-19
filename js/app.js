@@ -124,8 +124,15 @@ async function start() {
   if (navigator.storage?.persist) {
     navigator.storage.persist().then((ok) => db.setMeta('persisted', ok)).catch(() => {});
   }
+  // กลับมาจากลิงก์ยืนยันอีเมลของ Supabase (#access_token=… หรือ #error=…) — ลบ token ออกจาก URL แล้วพาไปหน้าล็อกอิน
+  const authReturn = /(^|[#&])(access_token|error)=/.test(location.hash) ? new URLSearchParams(location.hash.slice(1)) : null;
+  if (authReturn) history.replaceState(null, '', location.pathname + '#/settings');
   if (!location.hash) history.replaceState(null, '', '#/today');
   await go();
+  if (authReturn) {
+    if (authReturn.get('error')) toast(`ลิงก์ยืนยันใช้ไม่ได้: ${authReturn.get('error_description') || authReturn.get('error')}`, { ms: 6000 });
+    else toast('ยืนยันอีเมลแล้ว ล็อกอินที่การ์ด "บัญชีและซิงก์" ได้เลย', { ms: 6000 });
+  }
   // ซิงก์ระหว่างเครื่อง (ทำงานเมื่อล็อกอินเท่านั้น) — ดึงข้อมูลใหม่จากเครื่องอื่นมาแล้วให้วาดหน้าปัจจุบันใหม่
   startSync({
     onApplied: () => {
