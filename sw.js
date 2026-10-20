@@ -1,7 +1,7 @@
 // Service worker: แคชไฟล์ทั้งหมดของแอปเพื่อใช้ออฟไลน์ (เช่น ในยิมที่สัญญาณไม่ดี)
 // ถ้าเพิ่ม/ลบไฟล์ของแอป ให้แก้ FILES และเพิ่มเลข VERSION ด้วย (tests/data.test.mjs ตรวจให้)
 
-const VERSION = 'v7';
+const VERSION = 'v8';
 const CACHE = `fitness-tracker-${VERSION}`;
 
 const FILES = [
@@ -22,6 +22,7 @@ const FILES = [
   'js/game-actions.js',
   'js/game.js',
   'js/io.js',
+  'js/kingdom-summary.js',
   'js/lww.js',
   'js/seed.js',
   'js/state.js',

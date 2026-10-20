@@ -8,7 +8,7 @@
 // ตาราง 'meta' และ 'dirty' เป็นค่าเฉพาะเครื่อง (ไม่ซิงก์ ไม่ export)
 //   dirty = รายการที่เขียนในเครื่องแล้วแต่ยังไม่ได้ push ขึ้นเซิร์ฟเวอร์ (เขียนใน transaction เดียวกับตัวข้อมูล)
 
-import { DATA_FORMAT, DATA_VERSION, DEFAULT_GAME_SETTINGS, DEFAULT_PROFILE, FOOD_PRESETS_ID, GAME_SETTINGS_ID, PROFILE_ID, TABLES } from './constants.js';
+import { DATA_FORMAT, DATA_VERSION, DEFAULT_GAME_SETTINGS, DEFAULT_PROFILE, FOOD_PRESETS_ID, GAME_SETTINGS_ID, KINGDOM_SUMMARY_ID, PROFILE_ID, TABLES } from './constants.js';
 import { SEED_VERSION, planFoodSeed, seedExercises, seedRewards } from './seed.js';
 import { resolvePresets } from './food-quick.js';
 import { mergeRows, toMs } from './lww.js';
@@ -249,6 +249,19 @@ export async function saveFoodPresets(overrides) {
   if (existing) return update('profile', FOOD_PRESETS_ID, { presets, deleted: false });
   if (!presets) return null;
   return create('profile', { id: FOOD_PRESETS_ID, presets });
+}
+
+// ---------- สรุปให้แผนที่อาณาจักร (เรคคอร์ดเดียว id คงที่ ในตาราง profile) ----------
+
+/** เรคคอร์ดสรุปปัจจุบัน (ไม่มี/ถูกลบ = null) — อ่านด้วย id เท่านั้น ไม่ปนกับโปรไฟล์ */
+export const getKingdomSummary = () => get('profile', KINGDOM_SUMMARY_ID);
+
+/** เขียนเรคคอร์ดสรุป (fields จาก buildKingdomSummary) — เรียกเมื่อค่าเปลี่ยนเท่านั้น (ดู js/kingdom-summary.js) */
+export async function saveKingdomSummary(fields) {
+  const { id, ...rest } = fields;
+  const existing = await withStores('profile', 'readonly', (st) => reqP(st.get(KINGDOM_SUMMARY_ID)));
+  if (existing) return update('profile', KINGDOM_SUMMARY_ID, { ...rest, deleted: false }); // รวมกรณีถูก soft delete (เช่น import แบบแทนที่): สร้างคืนในรอบซิงก์ถัดไป
+  return create('profile', { ...rest, id: KINGDOM_SUMMARY_ID });
 }
 
 // ---------- งานเฉพาะโดเมน ----------

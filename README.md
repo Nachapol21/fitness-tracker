@@ -109,6 +109,33 @@
 - ความเข้ากันได้: log เดิมที่มี kcal ทำงานเหมือนเดิม · ไฟล์นำเข้า/ส่งออกรับ `kcal: null` และฟิลด์ใหม่ได้ (ไฟล์เก่าไม่มีฟิลด์เหล่านี้ก็นำเข้าได้ปกติ) · CSV `food_logs` มีคอลัมน์ `is_estimate` และ `kcal_missing` เสมอ · แอปรุ่นเก่าที่ซิงก์รับ log ที่ kcal เป็น null ได้ (นับเป็น 0)
 - ทดสอบ: `tests/food-quick.test.mjs`
 
+## สรุปให้แผนที่อาณาจักร
+
+แผนที่อาณาจักร (ราชสำนัก) อ่าน 🔥 ไฟ และ 🪙 coin ของแอปนี้จากแถวเดียวบน Supabase: ตาราง `sync_records` collection `profile` id `00000000-0000-4000-8000-000000000004` (`KINGDOM_SUMMARY_ID`) · แอปเขียนให้เองหลังซิงก์สำเร็จ **เฉพาะตอนล็อกอินอยู่** (ไม่ล็อกอิน = ไม่มีแถวนี้) ไม่ต้องตั้งค่าอะไรเพิ่ม
+
+| ฟิลด์ | ความหมาย |
+|---|---|
+| `kind` | `'kingdom_summary'` (บอกชนิดเรคคอร์ด) |
+| `balance` | ยอด 🪙 coin (ตามหน้าเกม) |
+| `streak.daily` | 🔥 ไฟรายวัน ตามตัวเลขที่การ์ดเกมแสดง (รวมวันนี้ถ้าผ่านแล้ว) |
+| `streak.weekly` | ไฟรายสัปดาห์ |
+| `multiplier` | ตัวคูณ coin ตามความยาวไฟ |
+| `freezes` | ไฟสำรองที่ถืออยู่ (0 หรือ 1) |
+| `week.sessions`, `week.target` | ฝึกครบกี่ครั้งในสัปดาห์นี้ / เป้า |
+| `today.date` | วันนี้ `YYYY-MM-DD` |
+| `today.kcal`, `today.kcal_target` | แคลที่กินวันนี้ / เป้าแคล (`null` ถ้ายังไม่ตั้งเป้า) |
+| `today.protein`, `today.protein_min` | โปรตีนวันนี้ / ขั้นต่ำ (`null` ถ้ายังไม่ตั้ง) |
+| `today.kcal_missing` | จำนวนมื้อของวันนี้ที่ยังไม่มีแคล |
+| `computed_at` | เวลาที่คำนวณ (ISO UTC) |
+
+ข้อมูลที่เหลือในแถวเป็นฟิลด์ระบบปกติ (`id`, `created_at`, `updated_at`, `deleted`) — **ไม่มีน้ำหนักตัว ชื่ออาหาร หรือโน้ต**
+
+- ค่ามาจาก `computeGame` (`js/game.js`) และ `dailyIntake` (`js/analytics.js`) ไม่มีสูตรซ้ำ · หลังจดข้อมูล → รอ debounce → ซิงก์ → คำนวณสรุป → ส่งขึ้นเซิร์ฟเวอร์ในรอบเดียวกัน (โค้ดอยู่ที่ `js/kingdom-summary.js`, ตะขอใน `js/sync-service.js`)
+- **เขียนเฉพาะเมื่อค่าเปลี่ยน** (เทียบทุกฟิลด์ยกเว้น `computed_at`) จึงไม่ซิงก์วน
+- หลายเครื่องเขียนแถวเดียวกันแบบ LWW ได้ เพราะทุกเครื่องคำนวณจากข้อมูลชุดเดียวกันหลังซิงก์
+- ไม่ใช่โปรไฟล์: แอปอ่านตาราง `profile` ด้วย id เสมอ (รุ่นเก่าที่ได้รับแถวนี้ก็แค่เก็บไว้เฉยๆ ไม่พัง) · ส่งออก/นำเข้า JSON ใส่แถวนี้ได้ตามปกติ · นำเข้าแบบ "แทนที่" แล้วแถวหายไป จะถูกสร้างคืนในรอบซิงก์ถัดไป
+- ทดสอบ: `tests/kingdom-summary.test.mjs`
+
 ## รันบนเครื่อง
 
 ต้องเปิดผ่านเว็บเซิร์ฟเวอร์ (เปิดไฟล์ `index.html` ตรงๆ ไม่ได้ เพราะใช้ ES modules และ service worker)
@@ -189,6 +216,7 @@ fitness-tracker/
 │  ├─ analytics.js         สูตรคำนวณทั้งหมด เป็นฟังก์ชันล้วน ทดสอบได้
 │  ├─ game.js              เกม coin/ไฟ/ร้าน เป็นฟังก์ชันล้วน (คำนวณจาก log) · game-actions.js = แลก/ซื้อไฟสำรอง/ยกเลิก
 │  ├─ seed.js              ท่า/อาหารตั้งต้น + id แบบคงที่ (+ planFoodSeed: ตัดเมนูที่ชื่อซ้ำตอน seed)
+│  ├─ kingdom-summary.js   สร้างเรคคอร์ดสรุป 🔥/🪙 ให้แผนที่อาณาจักร (ฟังก์ชันล้วน ทดสอบได้)
 │  ├─ food-quick.js        จดแบบกะเอา: ปุ่มกะ × ขนาด, นิยาม "ยังไม่มีแคล", ค้นหา, รายการล่าสุด (ฟังก์ชันล้วน ทดสอบได้)
 │  ├─ io.js, csv.js        ส่งออก/นำเข้า
 │  ├─ charts.js            กราฟ SVG วาดเอง (ไม่โหลด library ภายนอก)
@@ -214,7 +242,7 @@ fitness-tracker/
 
 | ตาราง | ฟิลด์ |
 |---|---|
-| `profile` | เรคคอร์ดโปรไฟล์ id คงที่ `00000000-0000-4000-8000-000000000001` (+ เรคคอร์ดค่าปุ่มกะ id `…0003` ดู "จดการกินแบบกะเอา") · sex, age, height_cm, activity, goal, rate_kg_week, calc_weight_kg, kcal, kcal_tolerance, protein_min, protein_max, fat, carb, sessions_per_week, step_goal, water_goal_ml |
+| `profile` | เรคคอร์ดโปรไฟล์ id คงที่ `00000000-0000-4000-8000-000000000001` (+ เรคคอร์ดค่าปุ่มกะ id `…0003` ดู "จดการกินแบบกะเอา" · + เรคคอร์ดสรุปให้แผนที่อาณาจักร id `…0004` ดู "สรุปให้แผนที่อาณาจักร") · sex, age, height_cm, activity, goal, rate_kg_week, calc_weight_kg, kcal, kcal_tolerance, protein_min, protein_max, fat, carb, sessions_per_week, step_goal, water_goal_ml |
 | `body_logs` | date, weight_kg, waist_cm, steps, note (1 เรคคอร์ด/วัน) |
 | `exercises` | name, muscle, category (ดัน/ดึง/ขา/core), equipment, machine, rep_min, rep_max, per_side, timed, note |
 | `sessions` | date, day_name, start_time, end_time, rpe, note, exercise_ids[] (ลำดับท่าในครั้งนั้น), date_estimated? |

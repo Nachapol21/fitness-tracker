@@ -45,12 +45,14 @@ export function createSync({
   clearTimer = (t) => clearTimeout(t),
   isOnline = () => globalThis.navigator?.onLine !== false,
   debounceMs = 5000,
+  onSynced,
 }) {
   const doFetch = fetchFn || ((...a) => fetch(...a));
   const listeners = new Set();
   const appliedListeners = new Set();
   let running = null;
   let rerun = false;
+  let hookReruns = 0; // จำนวนรอบเพิ่มที่ตะขอ onSynced ขอได้ต่อการเรียก sync() หนึ่งครั้ง (กันวนถ้าตะขอเขียนไม่หยุด)
   let timer = null;
   let status = { state: 'signed_out', pending: 0, rejected: 0, lastSyncAt: null, error: null, errorCode: null, user: null, lastResult: null };
 
@@ -254,6 +256,15 @@ export function createSync({
       await store.setMeta('sync_tables_version', SYNC_TABLES_VERSION);
       const at = new Date(now()).toISOString();
       await store.setMeta('sync_last_at', at);
+      // ตะขอหลังซิงก์สำเร็จ (ใช้เขียนเรคคอร์ดสรุปของแผนที่อาณาจักร): คืน true = เพิ่งเขียนข้อมูลใหม่ → รันรอบต่อไปทันทีเพื่อส่งขึ้นเซิร์ฟเวอร์
+      // ล้มเหลวต้องไม่ทำให้การซิงก์ล้ม · รอบถัดไปตะขอเห็นว่าค่าไม่เปลี่ยนแล้วไม่เขียนซ้ำ จึงไม่วน
+      if (onSynced) {
+        try {
+          if ((await onSynced()) && hookReruns-- > 0) rerun = true;
+        } catch (e) {
+          console.warn('ตะขอหลังซิงก์ล้มเหลว', e);
+        }
+      }
       setStatus({ state: 'idle', lastSyncAt: at, pending: await store.countDirty(), error: null, errorCode: null, rejected: (await getRejected()).length, lastResult: { pushed, rejected, ...pulled } });
       if (pulled.applied > 0) appliedListeners.forEach((fn) => fn(pulled.applied));
     } catch (e) {
@@ -268,6 +279,7 @@ export function createSync({
       rerun = true;
       return running;
     }
+    hookReruns = 2;
     running = (async () => {
       try {
         do {

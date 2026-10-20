@@ -17,7 +17,8 @@ export function memStorage() {
   return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), _m: m };
 }
 
-export function createDevice({ mock, clock, config, name = 'device', fetchWrap }) {
+/** onSynced: ตะขอหลังซิงก์สำเร็จ (ส่งต่อให้ createSync) — ไม่ส่ง = ทำงานเหมือนเดิมทุกอย่าง */
+export function createDevice({ mock, clock, config, name = 'device', fetchWrap, onSynced }) {
   const tables = Object.fromEntries(TABLES.map((t) => [t, new Map()]));
   const dirty = new Map();
   const meta = new Map();
@@ -71,6 +72,7 @@ export function createDevice({ mock, clock, config, name = 'device', fetchWrap }
       return t;
     },
     clearTimer: (t) => (t.cleared = true),
+    onSynced: onSynced ? () => onSynced(device) : undefined,
   });
 
   Object.assign(device, {
